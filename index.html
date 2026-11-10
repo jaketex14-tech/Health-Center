@@ -3,7 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>NutriTrack M3 - Mindful Nutrition & Cooking Tracker</title>
+    <title>NutriTrack M3 - Mindful Nutrition & Weight Tracker</title>
+    
+    <!-- PWA Manifest & Apple Touch Icon -->
+    <link rel="manifest" href="data:application/manifest+json,{
+        %22name%22: %22NutriTrack M3%22,
+        %22short_name%22: %22NutriTrack%22,
+        %22start_url%22: %22./index.html%22,
+        %22display%22: %22standalone%22,
+        %22background_color%22: %22%23F6F5F0%22,
+        %22theme_color%22: %22%232D5A43%22,
+        %22icons%22: [{
+            %22src%22: %22data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='110' fill='%232D5A43'/%3E%3Cpath d='M256 110c-75 0-136 61-136 136 0 53 31 99 76 121l16-68c-25-14-42-41-42-73 0-46 38-84 86-84s86 38 86 84c0 32-17 59-42 73l16 68c45-22 76-68 76-121 0-75-61-136-136-136z' fill='%23F6F5F0'/%3E%3Cpath d='M256 200c-25 0-46 21-46 46 0 17 9 32 23 40l10 50h26l10-50c14-8 23-23 23-40 0-25-21-46-46-46z' fill='%23C47D3B'/%3E%3C/svg%3E%22,
+            %22sizes%22: %22512x512%22,
+            %22type%22: %22image/svg+xml%22
+        }]
+    }">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='110' fill='%232D5A43'/%3E%3Cpath d='M256 110c-75 0-136 61-136 136 0 53 31 99 76 121l16-68c-25-14-42-41-42-73 0-46 38-84 86-84s86 38 86 84c0 32-17 59-42 73l16 68c45-22 76-68 76-121 0-75-61-136-136-136z' fill='%23F6F5F0'/%3E%3Cpath d='M256 200c-25 0-46 21-46 46 0 17 9 32 23 40l10 50h26l10-50c14-8 23-23 23-40 0-25-21-46-46-46z' fill='%23C47D3B'/%3E%3C/svg%3E">
+    <link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 512 512'%3E%3Crect width='512' height='512' rx='110' fill='%232D5A43'/%3E%3Cpath d='M256 110c-75 0-136 61-136 136 0 53 31 99 76 121l16-68c-25-14-42-41-42-73 0-46 38-84 86-84s86 38 86 84c0 32-17 59-42 73l16 68c45-22 76-68 76-121 0-75-61-136-136-136z' fill='%23F6F5F0'/%3E%3Cpath d='M256 200c-25 0-46 21-46 46 0 17 9 32 23 40l10 50h26l10-50c14-8 23-23 23-40 0-25-21-46-46-46z' fill='%23C47D3B'/%3E%3C/svg%3E">
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- React & ReactDOM -->
@@ -50,13 +68,15 @@
         const X = (props) => <i data-lucide="x" {...props}></i>;
         const Sliders = (props) => <i data-lucide="sliders" {...props}></i>;
         const Home = (props) => <i data-lucide="home" {...props}></i>;
+        const Scale = (props) => <i data-lucide="scale" {...props}></i>;
         const Loader2 = (props) => <i data-lucide="loader-2" {...props}></i>;
 
         // ============================================================================
         // CONSTANTS & 14-DAY RETENTION CONFIG
         // ============================================================================
-        const STORAGE_KEY_LOGS = 'mindful_nutrition_logs_v2';
-        const STORAGE_KEY_TARGETS = 'mindful_nutrition_targets_v2';
+        const STORAGE_KEY_LOGS = 'mindful_nutrition_logs_v3';
+        const STORAGE_KEY_WEIGHTS = 'mindful_nutrition_weights_v3';
+        const STORAGE_KEY_TARGETS = 'mindful_nutrition_targets_v3';
         const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
         const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -355,6 +375,7 @@ Account for culinary preparation effects:
             const [activeTab, setActiveTab] = useState('today');
             const [isDrawerOpen, setIsDrawerOpen] = useState(false);
             const [mealLogs, setMealLogs] = useState([]);
+            const [weightLogs, setWeightLogs] = useState([]);
             const [targets, setTargets] = useState(DEFAULT_TARGETS);
 
             // Goals Form State
@@ -367,6 +388,10 @@ Account for culinary preparation effects:
             const [goalCholesterol, setGoalCholesterol] = useState(String(DEFAULT_TARGETS.cholesterol));
             const [goalSavedMessage, setGoalSavedMessage] = useState(false);
 
+            // Weight Log State
+            const [currentWeightInput, setCurrentWeightInput] = useState('');
+            const [weightUnit, setWeightUnit] = useState('lbs');
+
             // Expansion toggles
             const [expandedMealId, setExpandedMealId] = useState(null);
             const [expandedHistoryDate, setExpandedHistoryDate] = useState(null);
@@ -378,7 +403,7 @@ Account for culinary preparation effects:
             const [isAnalyzing, setIsAnalyzing] = useState(false);
             const [previewMeal, setPreviewMeal] = useState(null);
 
-            // 14-Day Rolling Prune Engine
+            // 14-Day Rolling Prune Engine for Meals & Weights
             const pruneExpiredLogs = useCallback((logs) => {
                 const cutoff = Date.now() - FOURTEEN_DAYS_MS;
                 const valid = (logs || []).filter(entry => {
@@ -387,6 +412,18 @@ Account for culinary preparation effects:
                 });
                 try {
                     localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(valid));
+                } catch (e) {}
+                return valid;
+            }, []);
+
+            const pruneExpiredWeights = useCallback((weights) => {
+                const cutoff = Date.now() - FOURTEEN_DAYS_MS;
+                const valid = (weights || []).filter(entry => {
+                    const ts = typeof entry.timestamp === 'number' ? entry.timestamp : new Date(entry.dateKey).getTime();
+                    return ts >= cutoff;
+                });
+                try {
+                    localStorage.setItem(STORAGE_KEY_WEIGHTS, JSON.stringify(valid));
                 } catch (e) {}
                 return valid;
             }, []);
@@ -415,8 +452,17 @@ Account for culinary preparation effects:
                         const initialLogs = [{ id: `meal_${now}`, timestamp: now, dateKey: getDateKey(now), ...sampleAnalysis }];
                         setMealLogs(pruneExpiredLogs(initialLogs));
                     }
+
+                    const savedWeights = localStorage.getItem(STORAGE_KEY_WEIGHTS);
+                    if (savedWeights) {
+                        setWeightLogs(pruneExpiredWeights(JSON.parse(savedWeights)));
+                    } else {
+                        const now = Date.now();
+                        const initialWeights = [{ id: `wt_${now}`, timestamp: now, dateKey: getDateKey(now), weight: 176.5, unit: 'lbs' }];
+                        setWeightLogs(pruneExpiredWeights(initialWeights));
+                    }
                 } catch (e) {}
-            }, [pruneExpiredLogs]);
+            }, [pruneExpiredLogs, pruneExpiredWeights]);
 
             // Re-run Lucide icon replacement on tab or state changes
             useEffect(() => {
@@ -445,6 +491,10 @@ Account for culinary preparation effects:
                 })).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
             }, [mealLogs]);
 
+            const sortedWeights = useMemo(() => {
+                return [...weightLogs].sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+            }, [weightLogs]);
+
             const handleSaveGoalsForm = (e) => {
                 e.preventDefault();
                 const updated = {
@@ -462,6 +512,31 @@ Account for culinary preparation effects:
                 } catch (e) {}
                 setGoalSavedMessage(true);
                 setTimeout(() => setGoalSavedMessage(false), 2500);
+            };
+
+            const handleSaveWeight = (e) => {
+                e.preventDefault();
+                const val = parseFloat(currentWeightInput);
+                if (isNaN(val) || val <= 0) return;
+
+                const now = Date.now();
+                const newEntry = {
+                    id: `wt_${now}`,
+                    timestamp: now,
+                    dateKey: getDateKey(now),
+                    weight: val,
+                    unit: weightUnit
+                };
+
+                // Replace if already logged today, else prepend
+                const filtered = weightLogs.filter(w => w.dateKey !== newEntry.dateKey);
+                const nextWeights = pruneExpiredWeights([newEntry, ...filtered]);
+                setWeightLogs(nextWeights);
+                setCurrentWeightInput('');
+            };
+
+            const handleDeleteWeight = (id) => {
+                setWeightLogs(pruneExpiredWeights(weightLogs.filter(w => w.id !== id)));
             };
 
             const handleAnalyze = async (e) => {
@@ -532,6 +607,7 @@ Account for culinary preparation effects:
                                 {[
                                     { id: 'today', label: "Today's Scoreboard", icon: Home },
                                     { id: 'log', label: 'Log Meal', icon: Utensils },
+                                    { id: 'weight', label: 'Daily Weigh-Ins', icon: Scale },
                                     { id: 'history', label: '14-Day History', icon: Clock },
                                     { id: 'goals', label: 'Macro & Calorie Goals', icon: Sliders }
                                 ].map(item => {
@@ -569,12 +645,14 @@ Account for culinary preparation effects:
                                     <h1 className="text-base font-semibold tracking-tight text-[#1C2520]">
                                         {activeTab === 'today' && "Today's Scoreboard"}
                                         {activeTab === 'log' && 'Log & Analyze Meal'}
+                                        {activeTab === 'weight' && 'Daily Weigh-Ins'}
                                         {activeTab === 'history' && '14-Day Rolling History'}
                                         {activeTab === 'goals' && 'Macro & Calorie Goals'}
                                     </h1>
                                     <p className="text-xs text-[#646D67]">
                                         {activeTab === 'today' && 'Daily intake & key contributing factors'}
                                         {activeTab === 'log' && 'List ingredients & cooking style'}
+                                        {activeTab === 'weight' && 'Track daily body weight & trends'}
                                         {activeTab === 'history' && 'Saved history with auto-purge'}
                                         {activeTab === 'goals' && 'Customize daily nutritional targets'}
                                     </p>
@@ -885,7 +963,84 @@ Account for culinary preparation effects:
                             </main>
                         )}
 
-                        {/* ================= VIEW 3: 14-DAY HISTORY ================= */}
+                        {/* ================= VIEW 3: DAILY WEIGH-INS ================= */}
+                        {activeTab === 'weight' && (
+                            <main className="space-y-6">
+                                <form onSubmit={handleSaveWeight} className="bg-white rounded-2xl border border-[#E6E4DC] p-6 shadow-sm space-y-5">
+                                    <div>
+                                        <h2 className="text-sm font-semibold text-[#1C2520]">Record Today&apos;s Weight</h2>
+                                        <p className="text-xs text-[#646D67] mt-0.5">Track body weight trends alongside your 14-day nutrition history</p>
+                                    </div>
+
+                                    <div className="flex gap-3">
+                                        <div className="flex-1 space-y-1.5">
+                                            <label className="text-xs font-medium text-[#646D67]">Weight</label>
+                                            <input
+                                                type="number"
+                                                step="0.1"
+                                                value={currentWeightInput}
+                                                onChange={(e) => setCurrentWeightInput(e.target.value)}
+                                                placeholder="e.g. 175.4"
+                                                className="w-full p-3 rounded-xl bg-[#F6F5F0] border border-[#E6E4DC] focus:border-[#2D5A43] focus:bg-white focus:outline-none text-xs text-[#1C2520]"
+                                            />
+                                        </div>
+                                        <div className="w-28 space-y-1.5">
+                                            <label className="text-xs font-medium text-[#646D67]">Unit</label>
+                                            <select
+                                                value={weightUnit}
+                                                onChange={(e) => setWeightUnit(e.target.value)}
+                                                className="w-full p-3 rounded-xl bg-[#F6F5F0] border border-[#E6E4DC] focus:border-[#2D5A43] focus:bg-white focus:outline-none text-xs text-[#1C2520]"
+                                            >
+                                                <option value="lbs">lbs</option>
+                                                <option value="kg">kg</option>
+                                                <option value="st">st</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        type="submit"
+                                        disabled={!currentWeightInput}
+                                        className="w-full py-3 px-4 rounded-xl bg-[#2D5A43] hover:bg-[#234735] disabled:opacity-50 text-white text-xs font-semibold tracking-wide transition flex items-center justify-center gap-2"
+                                    >
+                                        <Check className="w-4 h-4" />
+                                        <span>Save Weigh-In</span>
+                                    </button>
+                                </form>
+
+                                <section className="space-y-3">
+                                    <h2 className="text-xs font-semibold uppercase tracking-wider text-[#646D67] px-1">Weigh-In History (Last 14 Days)</h2>
+                                    {sortedWeights.length === 0 ? (
+                                        <div className="bg-white rounded-2xl border border-[#E6E4DC] p-8 text-center">
+                                            <p className="text-sm text-[#646D67]">No weigh-ins recorded yet.</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2.5">
+                                            {sortedWeights.map(w => (
+                                                <div key={w.id} className="bg-white rounded-2xl border border-[#E6E4DC] p-4 sm:px-5 flex items-center justify-between text-xs">
+                                                    <div>
+                                                        <span className="font-semibold text-[#1C2520]">{formatReadableDate(w.dateKey)}</span>
+                                                        <span className="text-[#646D67] ml-2">({w.dateKey})</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-4">
+                                                        <span className="text-sm font-semibold text-[#2D5A43]">{w.weight} {w.unit}</span>
+                                                        <button
+                                                            onClick={() => handleDeleteWeight(w.id)}
+                                                            className="p-1.5 rounded-lg text-[#646D67] hover:text-[#B55A44] hover:bg-[#F6F5F0] transition"
+                                                            title="Delete entry"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </section>
+                            </main>
+                        )}
+
+                        {/* ================= VIEW 4: 14-DAY HISTORY ================= */}
                         {activeTab === 'history' && (
                             <main className="space-y-4">
                                 {historyDays.length === 0 ? (
@@ -954,7 +1109,7 @@ Account for culinary preparation effects:
                             </main>
                         )}
 
-                        {/* ================= VIEW 4: GOALS ================= */}
+                        {/* ================= VIEW 5: GOALS ================= */}
                         {activeTab === 'goals' && (
                             <main className="space-y-4">
                                 <form onSubmit={handleSaveGoalsForm} className="bg-white rounded-2xl border border-[#E6E4DC] p-6 shadow-sm space-y-5">
