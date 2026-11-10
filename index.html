@@ -1,0 +1,1017 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>NutriTrack M3 - Mindful Nutrition & Cooking Tracker</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <!-- Babel Standalone for JSX compilation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #F6F5F0;
+            color: #1C2520;
+        }
+        input[type="number"]::-webkit-inner-spin-button,
+        input[type="number"]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+    </style>
+</head>
+<body class="bg-[#F6F5F0] text-[#1C2520] antialiased">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useMemo, useCallback } = React;
+
+        // ============================================================================
+        // ICONS WRAPPER USING LUCIDE
+        // ============================================================================
+        const Leaf = (props) => <i data-lucide="leaf" {...props}></i>;
+        const Plus = (props) => <i data-lucide="plus" {...props}></i>;
+        const Trash2 = (props) => <i data-lucide="trash-2" {...props}></i>;
+        const ChevronDown = (props) => <i data-lucide="chevron-down" {...props}></i>;
+        const ChevronUp = (props) => <i data-lucide="chevron-up" {...props}></i>;
+        const Sparkles = (props) => <i data-lucide="sparkles" {...props}></i>;
+        const Check = (props) => <i data-lucide="check" {...props}></i>;
+        const Utensils = (props) => <i data-lucide="utensils" {...props}></i>;
+        const Clock = (props) => <i data-lucide="clock" {...props}></i>;
+        const Menu = (props) => <i data-lucide="menu" {...props}></i>;
+        const X = (props) => <i data-lucide="x" {...props}></i>;
+        const Sliders = (props) => <i data-lucide="sliders" {...props}></i>;
+        const Home = (props) => <i data-lucide="home" {...props}></i>;
+        const Loader2 = (props) => <i data-lucide="loader-2" {...props}></i>;
+
+        // ============================================================================
+        // CONSTANTS & 14-DAY RETENTION CONFIG
+        // ============================================================================
+        const STORAGE_KEY_LOGS = 'mindful_nutrition_logs_v2';
+        const STORAGE_KEY_TARGETS = 'mindful_nutrition_targets_v2';
+        const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+        const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+
+        const DEFAULT_TARGETS = {
+            calories: 2100,
+            protein: 135,
+            carbs: 210,
+            fat: 75,
+            saturatedFat: 20,
+            sodium: 2300,
+            cholesterol: 300
+        };
+
+        const MEAL_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
+
+        const COOKING_STYLES = [
+            'Scrambled / Pan-Fried',
+            'Grilled / Roasted',
+            'Boiled / Poached',
+            'Baked',
+            'Steamed',
+            'Raw / As-Is'
+        ];
+
+        const SAMPLE_BREAKFAST = {
+            mealType: 'Breakfast',
+            cookingStyle: 'Scrambled / Pan-Fried',
+            ingredientsText: '6 extra-large eggs, 1/3 lb bacon, 5 slices American cheese, 3 tbsp butter, 2 slices white bread'
+        };
+
+        // ============================================================================
+        // DATE HELPERS
+        // ============================================================================
+        function getDateKey(timestamp = Date.now()) {
+            const d = new Date(timestamp);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function formatReadableDate(dateKey) {
+            const todayKey = getDateKey(Date.now());
+            const yesterdayKey = getDateKey(Date.now() - ONE_DAY_MS);
+            if (dateKey === todayKey) return 'Today';
+            if (dateKey === yesterdayKey) return 'Yesterday';
+
+            const [y, m, d] = dateKey.split('-').map(Number);
+            const dateObj = new Date(y, m - 1, d);
+            return dateObj.toLocaleDateString('en-US', {
+                weekday: 'short',
+                month: 'short',
+                day: 'numeric'
+            });
+        }
+
+        // ============================================================================
+        // CULINARY FALLBACK & INSTANT REFERENCE ENGINE
+        // ============================================================================
+        function calculateFallbackAnalysis({ mealType, cookingStyle, ingredientsText }) {
+            const normalized = ingredientsText.toLowerCase();
+
+            if (
+                normalized.includes('6') &&
+                normalized.includes('egg') &&
+                normalized.includes('bacon') &&
+                normalized.includes('cheese')
+            ) {
+                const ingredients = [
+                    { ingredient: '6 extra-large eggs', note: 'Scrambled curds absorb melted cooking butter', calories: 480, protein: 42, carbs: 2.4, fat: 32.4, saturatedFat: 10.2, cholesterol: 1260, sodium: 420 },
+                    { ingredient: '1/3 lb bacon (pan-fried)', note: 'Pan-frying renders out ~68% of raw fat into the skillet', calories: 265, protein: 18.5, carbs: 0.7, fat: 20.5, saturatedFat: 6.9, cholesterol: 55, sodium: 890 },
+                    { ingredient: '5 slices American cheese', note: 'Melted directly into scramble', calories: 390, protein: 18, carbs: 5, fat: 33, saturatedFat: 19.2, cholesterol: 100, sodium: 1600 },
+                    { ingredient: '3 tbsp salted butter', note: 'Absorbed into scrambled eggs and toast', calories: 306, protein: 0.4, carbs: 0, fat: 34.5, saturatedFat: 21.6, cholesterol: 92, sodium: 273 },
+                    { ingredient: '2 slices white bread', note: 'Toasted', calories: 150, protein: 5, carbs: 28, fat: 2, saturatedFat: 0.4, cholesterol: 0, sodium: 290 }
+                ];
+                const totals = sumIngredients(ingredients);
+                return {
+                    mealTitle: 'Scrambled Eggs, Bacon, Cheese & Toast',
+                    mealType,
+                    cookingStyle,
+                    cookingImpactNote: 'Scrambling the eggs absorbed nearly all 3 tbsp of melted butter (+306 kcal), while pan-frying the bacon rendered out about two-thirds of its raw fat into the pan.',
+                    totals,
+                    ingredients
+                };
+            }
+
+            const parts = ingredientsText.split(/,|\n/).map(s => s.trim()).filter(Boolean);
+            const styleMultiplier = cookingStyle === 'Scrambled / Pan-Fried' ? 1.12 : cookingStyle === 'Grilled / Roasted' ? 0.95 : 1.0;
+
+            const ingredients = parts.map(part => {
+                const low = part.toLowerCase();
+                const numMatch = low.match(/(\d+(\.\d+)?)/);
+                const qty = numMatch ? parseFloat(numMatch[1]) : 1;
+
+                if (low.includes('egg')) {
+                    return { ingredient: part, note: cookingStyle, calories: Math.round(qty * 78 * styleMultiplier), protein: +(qty * 6.5).toFixed(1), carbs: +(qty * 0.5).toFixed(1), fat: +(qty * 5.3 * styleMultiplier).toFixed(1), saturatedFat: +(qty * 1.6 * styleMultiplier).toFixed(1), cholesterol: Math.round(qty * 195), sodium: Math.round(qty * 68) };
+                }
+                if (low.includes('butter') || low.includes('oil')) {
+                    return { ingredient: part, note: 'Cooking fat retained on food', calories: Math.round(qty * 102), protein: 0, carbs: 0, fat: +(qty * 11.5).toFixed(1), saturatedFat: low.includes('butter') ? +(qty * 7.2).toFixed(1) : +(qty * 1.8).toFixed(1), cholesterol: low.includes('butter') ? Math.round(qty * 31) : 0, sodium: low.includes('butter') ? Math.round(qty * 90) : 0 };
+                }
+                if (low.includes('bacon') || low.includes('sausage')) {
+                    return { ingredient: part, note: `${cookingStyle} (rendered excess fat)`, calories: 260, protein: 18, carbs: 1, fat: 20, saturatedFat: 6.8, cholesterol: 55, sodium: 860 };
+                }
+                if (low.includes('cheese')) {
+                    return { ingredient: part, note: 'Melted', calories: Math.round(qty * 78), protein: +(qty * 3.6).toFixed(1), carbs: +(qty * 1.0).toFixed(1), fat: +(qty * 6.5).toFixed(1), saturatedFat: +(qty * 3.8).toFixed(1), cholesterol: Math.round(qty * 20), sodium: Math.round(qty * 310) };
+                }
+                if (low.includes('bread') || low.includes('toast') || low.includes('rice') || low.includes('oat')) {
+                    return { ingredient: part, note: cookingStyle, calories: Math.round(qty * 80), protein: +(qty * 2.8).toFixed(1), carbs: +(qty * 15).toFixed(1), fat: +(qty * 1).toFixed(1), saturatedFat: +(qty * 0.2).toFixed(1), cholesterol: 0, sodium: Math.round(qty * 140) };
+                }
+                if (low.includes('chicken') || low.includes('salmon') || low.includes('steak') || low.includes('beef')) {
+                    return { ingredient: part, note: cookingStyle, calories: Math.round(310 * styleMultiplier), protein: 38, carbs: 0, fat: +(16 * styleMultiplier).toFixed(1), saturatedFat: +(4.8 * styleMultiplier).toFixed(1), cholesterol: 105, sodium: 280 };
+                }
+
+                return { ingredient: part, note: cookingStyle, calories: Math.round(140 * styleMultiplier), protein: 6, carbs: 14, fat: +(6 * styleMultiplier).toFixed(1), saturatedFat: 1.5, cholesterol: 15, sodium: 190 };
+            });
+
+            const totals = sumIngredients(ingredients);
+            return {
+                mealTitle: `${cookingStyle} ${mealType}`,
+                mealType,
+                cookingStyle,
+                cookingImpactNote: `Prepared ${cookingStyle.toLowerCase()}, adjusting final calorie and lipid retention across ${ingredients.length} ingredients.`,
+                totals,
+                ingredients
+            };
+        }
+
+        function sumIngredients(ingredients) {
+            return ingredients.reduce((acc, item) => ({
+                calories: Math.round(acc.calories + (Number(item.calories) || 0)),
+                protein: +(acc.protein + (Number(item.protein) || 0)).toFixed(1),
+                carbs: +(acc.carbs + (Number(item.carbs) || 0)).toFixed(1),
+                fat: +(acc.fat + (Number(item.fat) || 0)).toFixed(1),
+                saturatedFat: +(acc.saturatedFat + (Number(item.saturatedFat) || 0)).toFixed(1),
+                cholesterol: Math.round(acc.cholesterol + (Number(item.cholesterol) || 0)),
+                sodium: Math.round(acc.sodium + (Number(item.sodium) || 0))
+            }), { calories: 0, protein: 0, carbs: 0, fat: 0, saturatedFat: 0, cholesterol: 0, sodium: 0 });
+        }
+
+        // ============================================================================
+        // GEMINI API STRUCTURED NUTRITION ANALYZER
+        // ============================================================================
+        async function analyzeMealWithGemini({ mealType, cookingStyle, ingredientsText }) {
+            const apiKey = '';
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+            const systemInstruction = `You are a mindful culinary nutritionist.
+Given a list of ingredients and a cooking style, calculate accurate nutrition facts.
+Account for culinary preparation effects:
+- Pan-frying raw bacon renders out ~65-70% of its raw fat into the pan.
+- Scrambling eggs in butter causes porous egg curds to absorb ~95-100% of the melted butter.
+- Keep 'cookingImpactNote' to a single concise, calm sentence explaining how the cooking method influenced macros.
+- Ensure 'totals' equals the exact sum of the 'ingredients' list.`;
+
+            const userQuery = `Meal Type: ${mealType}\nCooking Style: ${cookingStyle}\nIngredients: ${ingredientsText}`;
+
+            const payload = {
+                contents: [{ parts: [{ text: userQuery }] }],
+                systemInstruction: { parts: [{ text: systemInstruction }] },
+                generationConfig: {
+                    responseMimeType: 'application/json',
+                    responseSchema: {
+                        type: 'OBJECT',
+                        properties: {
+                            mealTitle: { type: 'STRING' },
+                            cookingImpactNote: { type: 'STRING' },
+                            totals: {
+                                type: 'OBJECT',
+                                properties: {
+                                    calories: { type: 'NUMBER' },
+                                    protein: { type: 'NUMBER' },
+                                    carbs: { type: 'NUMBER' },
+                                    fat: { type: 'NUMBER' },
+                                    saturatedFat: { type: 'NUMBER' },
+                                    cholesterol: { type: 'NUMBER' },
+                                    sodium: { type: 'NUMBER' }
+                                },
+                                required: ['calories', 'protein', 'carbs', 'fat', 'saturatedFat', 'cholesterol', 'sodium']
+                            },
+                            ingredients: {
+                                type: 'ARRAY',
+                                items: {
+                                    type: 'OBJECT',
+                                    properties: {
+                                        ingredient: { type: 'STRING' },
+                                        note: { type: 'STRING' },
+                                        calories: { type: 'NUMBER' },
+                                        protein: { type: 'NUMBER' },
+                                        carbs: { type: 'NUMBER' },
+                                        fat: { type: 'NUMBER' },
+                                        saturatedFat: { type: 'NUMBER' },
+                                        cholesterol: { type: 'NUMBER' },
+                                        sodium: { type: 'NUMBER' }
+                                    },
+                                    required: ['ingredient', 'note', 'calories', 'protein', 'carbs', 'fat', 'saturatedFat', 'cholesterol', 'sodium']
+                                }
+                            }
+                        },
+                        required: ['mealTitle', 'cookingImpactNote', 'totals', 'ingredients']
+                    }
+                }
+            };
+
+            const delays = [1000, 2000, 4000];
+            for (let attempt = 0; attempt <= delays.length; attempt++) {
+                try {
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                    const result = await response.json();
+                    const rawJson = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (!rawJson) throw new Error('Empty response');
+
+                    const parsed = JSON.parse(rawJson);
+                    return {
+                        mealTitle: parsed.mealTitle || `${cookingStyle} ${mealType}`,
+                        mealType,
+                        cookingStyle,
+                        cookingImpactNote: parsed.cookingImpactNote,
+                        totals: sumIngredients(parsed.ingredients || []),
+                        ingredients: parsed.ingredients || []
+                    };
+                } catch (e) {
+                    if (attempt < delays.length) {
+                        await new Promise(r => setTimeout(r, delays[attempt]));
+                    } else {
+                        return calculateFallbackAnalysis({ mealType, cookingStyle, ingredientsText });
+                    }
+                }
+            }
+        }
+
+        // ============================================================================
+        // KEY CONTRIBUTING FACTORS SYNTHESIS
+        // ============================================================================
+        function buildKeyContributingFactors(meals) {
+            if (!meals || meals.length === 0) return [];
+            const allItems = [];
+            meals.forEach(meal => {
+                (meal.ingredients || []).forEach(ing => {
+                    allItems.push({ ...ing, cookingStyle: meal.cookingStyle });
+                });
+            });
+
+            if (allItems.length === 0) return [];
+            const totals = sumIngredients(allItems);
+            const byCal = [...allItems].sort((a, b) => b.calories - a.calories);
+            const byPro = [...allItems].sort((a, b) => b.protein - a.protein);
+            const bySatFat = [...allItems].sort((a, b) => b.saturatedFat - a.saturatedFat);
+            const bySodium = [...allItems].sort((a, b) => b.sodium - a.sodium);
+
+            const takeaways = [];
+            if (byCal[0] && byPro[0]) {
+                const calPct = totals.calories > 0 ? Math.round((byCal[0].calories / totals.calories) * 100) : 0;
+                if (byCal[0].ingredient === byPro[0].ingredient) {
+                    takeaways.push({
+                        label: 'Primary Energy & Protein Source',
+                        detail: `${byCal[0].ingredient} anchors your intake with ${byCal[0].calories} kcal (${calPct}% of calories) and ${byPro[0].protein}g of protein.`
+                    });
+                } else {
+                    takeaways.push({
+                        label: 'Calorie & Protein Balance',
+                        detail: `${byCal[0].ingredient} is the largest energy source (${byCal[0].calories} kcal), while ${byPro[0].ingredient} leads protein intake (${byPro[0].protein}g).`
+                    });
+                }
+            }
+
+            if (bySatFat[0] && bySatFat[0].saturatedFat > 0) {
+                const secondSat = bySatFat[1] && bySatFat[1].saturatedFat > 3 ? ` and ${bySatFat[1].ingredient} (${bySatFat[1].saturatedFat}g)` : '';
+                takeaways.push({
+                    label: 'Cooking Fat & Lipid Impact',
+                    detail: `${bySatFat[0].ingredient} (${bySatFat[0].saturatedFat}g sat. fat)${secondSat} account for the majority of saturated fat through ${bySatFat[0].cookingStyle.toLowerCase()} preparation.`
+                });
+            }
+
+            if (bySodium[0] && bySodium[0].sodium > 0) {
+                const sodPct = totals.sodium > 0 ? Math.round((bySodium[0].sodium / totals.sodium) * 100) : 0;
+                const secondSod = bySodium[1] && bySodium[1].sodium > 300 ? `, followed by ${bySodium[1].ingredient} (${bySodium[1].sodium}mg)` : '';
+                takeaways.push({
+                    label: 'Primary Sodium Contributor',
+                    detail: `${bySodium[0].ingredient} contributes ${bySodium[0].sodium}mg of sodium (${sodPct}% of today's total)${secondSod}.`
+                });
+            }
+
+            return takeaways.slice(0, 3);
+        }
+
+        // ============================================================================
+        // MAIN APPLICATION COMPONENT
+        // ============================================================================
+        function App() {
+            const [activeTab, setActiveTab] = useState('today');
+            const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+            const [mealLogs, setMealLogs] = useState([]);
+            const [targets, setTargets] = useState(DEFAULT_TARGETS);
+
+            // Goals Form State
+            const [goalCalories, setGoalCalories] = useState(String(DEFAULT_TARGETS.calories));
+            const [goalProtein, setGoalProtein] = useState(String(DEFAULT_TARGETS.protein));
+            const [goalCarbs, setGoalCarbs] = useState(String(DEFAULT_TARGETS.carbs));
+            const [goalFat, setGoalFat] = useState(String(DEFAULT_TARGETS.fat));
+            const [goalSatFat, setGoalSatFat] = useState(String(DEFAULT_TARGETS.saturatedFat));
+            const [goalSodium, setGoalSodium] = useState(String(DEFAULT_TARGETS.sodium));
+            const [goalCholesterol, setGoalCholesterol] = useState(String(DEFAULT_TARGETS.cholesterol));
+            const [goalSavedMessage, setGoalSavedMessage] = useState(false);
+
+            // Expansion toggles
+            const [expandedMealId, setExpandedMealId] = useState(null);
+            const [expandedHistoryDate, setExpandedHistoryDate] = useState(null);
+
+            // Log Meal State
+            const [mealType, setMealType] = useState('Breakfast');
+            const [cookingStyle, setCookingStyle] = useState('Scrambled / Pan-Fried');
+            const [ingredientsText, setIngredientsText] = useState('');
+            const [isAnalyzing, setIsAnalyzing] = useState(false);
+            const [previewMeal, setPreviewMeal] = useState(null);
+
+            // 14-Day Rolling Prune Engine
+            const pruneExpiredLogs = useCallback((logs) => {
+                const cutoff = Date.now() - FOURTEEN_DAYS_MS;
+                const valid = (logs || []).filter(entry => {
+                    const ts = typeof entry.timestamp === 'number' ? entry.timestamp : new Date(entry.dateKey).getTime();
+                    return ts >= cutoff;
+                });
+                try {
+                    localStorage.setItem(STORAGE_KEY_LOGS, JSON.stringify(valid));
+                } catch (e) {}
+                return valid;
+            }, []);
+
+            useEffect(() => {
+                try {
+                    const savedTargets = localStorage.getItem(STORAGE_KEY_TARGETS);
+                    if (savedTargets) {
+                        const parsed = { ...DEFAULT_TARGETS, ...JSON.parse(savedTargets) };
+                        setTargets(parsed);
+                        setGoalCalories(String(parsed.calories));
+                        setGoalProtein(String(parsed.protein));
+                        setGoalCarbs(String(parsed.carbs));
+                        setGoalFat(String(parsed.fat));
+                        setGoalSatFat(String(parsed.saturatedFat));
+                        setGoalSodium(String(parsed.sodium));
+                        setGoalCholesterol(String(parsed.cholesterol));
+                    }
+
+                    const savedLogs = localStorage.getItem(STORAGE_KEY_LOGS);
+                    if (savedLogs) {
+                        setMealLogs(pruneExpiredLogs(JSON.parse(savedLogs)));
+                    } else {
+                        const now = Date.now();
+                        const sampleAnalysis = calculateFallbackAnalysis(SAMPLE_BREAKFAST);
+                        const initialLogs = [{ id: `meal_${now}`, timestamp: now, dateKey: getDateKey(now), ...sampleAnalysis }];
+                        setMealLogs(pruneExpiredLogs(initialLogs));
+                    }
+                } catch (e) {}
+            }, [pruneExpiredLogs]);
+
+            // Re-run Lucide icon replacement on tab or state changes
+            useEffect(() => {
+                if (window.lucide) {
+                    window.lucide.createIcons();
+                }
+            });
+
+            const todayKey = getDateKey(Date.now());
+            const todayMeals = useMemo(() => mealLogs.filter(m => m.dateKey === todayKey), [mealLogs, todayKey]);
+            const todayTotals = useMemo(() => sumIngredients(todayMeals.map(m => m.totals || {})), [todayMeals]);
+            const todayFactors = useMemo(() => buildKeyContributingFactors(todayMeals), [todayMeals]);
+
+            const historyDays = useMemo(() => {
+                const grouped = new Map();
+                mealLogs.forEach(meal => {
+                    if (!grouped.has(meal.dateKey)) grouped.set(meal.dateKey, []);
+                    grouped.get(meal.dateKey).push(meal);
+                });
+                return Array.from(grouped.entries()).map(([dateKey, meals]) => ({
+                    dateKey,
+                    readableDate: formatReadableDate(dateKey),
+                    meals,
+                    totals: sumIngredients(meals.map(m => m.totals || {})),
+                    factors: buildKeyContributingFactors(meals)
+                })).sort((a, b) => b.dateKey.localeCompare(a.dateKey));
+            }, [mealLogs]);
+
+            const handleSaveGoalsForm = (e) => {
+                e.preventDefault();
+                const updated = {
+                    calories: parseInt(goalCalories, 10) || 2100,
+                    protein: parseInt(goalProtein, 10) || 135,
+                    carbs: parseInt(goalCarbs, 10) || 210,
+                    fat: parseInt(goalFat, 10) || 75,
+                    saturatedFat: parseInt(goalSatFat, 10) || 20,
+                    sodium: parseInt(goalSodium, 10) || 2300,
+                    cholesterol: parseInt(goalCholesterol, 10) || 300
+                };
+                setTargets(updated);
+                try {
+                    localStorage.setItem(STORAGE_KEY_TARGETS, JSON.stringify(updated));
+                } catch (e) {}
+                setGoalSavedMessage(true);
+                setTimeout(() => setGoalSavedMessage(false), 2500);
+            };
+
+            const handleAnalyze = async (e) => {
+                if (e) e.preventDefault();
+                if (!ingredientsText.trim()) return;
+                setIsAnalyzing(true);
+                try {
+                    const result = await analyzeMealWithGemini({ mealType, cookingStyle, ingredientsText });
+                    setPreviewMeal(result);
+                } finally {
+                    setIsAnalyzing(false);
+                }
+            };
+
+            const handleSavePreviewToToday = () => {
+                if (!previewMeal) return;
+                const now = Date.now();
+                const newEntry = {
+                    id: `meal_${now}_${Math.random().toString(36).slice(2, 6)}`,
+                    timestamp: now,
+                    dateKey: getDateKey(now),
+                    ...previewMeal
+                };
+                const nextLogs = pruneExpiredLogs([newEntry, ...mealLogs]);
+                setMealLogs(nextLogs);
+                setPreviewMeal(null);
+                setIngredientsText('');
+                setActiveTab('today');
+            };
+
+            const handleDeleteMeal = (id) => {
+                setMealLogs(pruneExpiredLogs(mealLogs.filter(m => m.id !== id)));
+            };
+
+            const handleFillSampleBreakfast = () => {
+                setMealType(SAMPLE_BREAKFAST.mealType);
+                setCookingStyle(SAMPLE_BREAKFAST.cookingStyle);
+                setIngredientsText(SAMPLE_BREAKFAST.ingredientsText);
+                setPreviewMeal(calculateFallbackAnalysis(SAMPLE_BREAKFAST));
+            };
+
+            return (
+                <div className="min-h-screen bg-[#F6F5F0] text-[#1C2520] font-sans relative">
+                    {/* Backdrop */}
+                    {isDrawerOpen && (
+                        <div onClick={() => setIsDrawerOpen(false)} className="fixed inset-0 bg-black/20 z-40 backdrop-blur-[1px] transition-opacity" />
+                    )}
+
+                    {/* Navigation Drawer */}
+                    <aside className={`fixed top-0 left-0 bottom-0 w-72 bg-white border-r border-[#E6E4DC] z-50 p-6 flex flex-col justify-between shadow-xl transition-transform duration-300 ease-in-out ${isDrawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+                        <div className="space-y-6">
+                            <div className="flex items-center justify-between pb-4 border-b border-[#F0EFEA]">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-9 h-9 rounded-xl bg-[#EAF0EC] text-[#2D5A43] flex items-center justify-center">
+                                        <Leaf className="w-5 h-5 stroke-[2]" />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-sm font-semibold tracking-tight text-[#1C2520]">NutriTrack M3</h2>
+                                        <p className="text-[11px] text-[#646D67]">Mindful Nutrition</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setIsDrawerOpen(false)} className="p-1.5 rounded-lg text-[#646D67] hover:bg-[#F6F5F0] transition">
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <nav className="space-y-1">
+                                {[
+                                    { id: 'today', label: "Today's Scoreboard", icon: Home },
+                                    { id: 'log', label: 'Log Meal', icon: Utensils },
+                                    { id: 'history', label: '14-Day History', icon: Clock },
+                                    { id: 'goals', label: 'Macro & Calorie Goals', icon: Sliders }
+                                ].map(item => {
+                                    const Icon = item.icon;
+                                    const isActive = activeTab === item.id;
+                                    return (
+                                        <button
+                                            key={item.id}
+                                            onClick={() => { setActiveTab(item.id); setIsDrawerOpen(false); }}
+                                            className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition ${isActive ? 'bg-[#EAF0EC] text-[#2D5A43]' : 'text-[#646D67] hover:bg-[#F6F5F0] hover:text-[#1C2520]'}`}
+                                        >
+                                            <Icon className="w-4 h-4" />
+                                            <span>{item.label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </nav>
+                        </div>
+
+                        <div className="pt-4 border-t border-[#F0EFEA] text-[11px] text-[#646D67] space-y-1">
+                            <p className="font-medium text-[#1C2520]">Automated Retention</p>
+                            <p>History automatically clears after 14 days.</p>
+                        </div>
+                    </aside>
+
+                    {/* Main Container */}
+                    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
+                        {/* Header */}
+                        <header className="flex items-center justify-between pb-4 border-b border-[#E6E4DC]">
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => setIsDrawerOpen(true)} className="p-2 rounded-xl bg-white border border-[#E6E4DC] text-[#1C2520] hover:bg-[#FAF9F6] shadow-sm transition" title="Open menu">
+                                    <Menu className="w-5 h-5" />
+                                </button>
+                                <div>
+                                    <h1 className="text-base font-semibold tracking-tight text-[#1C2520]">
+                                        {activeTab === 'today' && "Today's Scoreboard"}
+                                        {activeTab === 'log' && 'Log & Analyze Meal'}
+                                        {activeTab === 'history' && '14-Day Rolling History'}
+                                        {activeTab === 'goals' && 'Macro & Calorie Goals'}
+                                    </h1>
+                                    <p className="text-xs text-[#646D67]">
+                                        {activeTab === 'today' && 'Daily intake & key contributing factors'}
+                                        {activeTab === 'log' && 'List ingredients & cooking style'}
+                                        {activeTab === 'history' && 'Saved history with auto-purge'}
+                                        {activeTab === 'goals' && 'Customize daily nutritional targets'}
+                                    </p>
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 bg-white border border-[#E6E4DC] px-3 py-1.5 rounded-xl text-xs font-medium text-[#2D5A43] shadow-sm">
+                                <span className="w-2 h-2 rounded-full bg-[#2D5A43] animate-pulse" />
+                                <span>Active</span>
+                            </div>
+                        </header>
+
+                        {/* ================= VIEW 1: TODAY ================= */}
+                        {activeTab === 'today' && (
+                            <main className="space-y-6">
+                                <section className="bg-white rounded-2xl border border-[#E6E4DC] p-6 shadow-sm space-y-6">
+                                    <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 pb-5 border-b border-[#F0EFEA]">
+                                        <div>
+                                            <span className="text-xs font-medium uppercase tracking-wider text-[#646D67]">Today&apos;s Energy Intake</span>
+                                            <div className="mt-1 flex items-baseline gap-2">
+                                                <span className="text-4xl font-semibold tracking-tight text-[#1C2520]">{todayTotals.calories.toLocaleString()}</span>
+                                                <span className="text-sm text-[#646D67]">/ {targets.calories.toLocaleString()} kcal</span>
+                                            </div>
+                                        </div>
+                                        <div className="text-xs text-[#646D67]">
+                                            {todayTotals.calories <= targets.calories ? (
+                                                <span><strong className="text-[#1C2520] font-medium">{(targets.calories - todayTotals.calories).toLocaleString()} kcal</strong> remaining today</span>
+                                            ) : (
+                                                <span><strong className="text-[#B55A44] font-medium">{(todayTotals.calories - targets.calories).toLocaleString()} kcal</strong> above goal</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Macro Progress Bars */}
+                                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                                        {[
+                                            { label: 'Protein', value: todayTotals.protein, target: targets.protein, color: '#2D5A43' },
+                                            { label: 'Carbohydrates', value: todayTotals.carbs, target: targets.carbs, color: '#C47D3B' },
+                                            { label: 'Total Fat', value: todayTotals.fat, target: targets.fat, color: '#B55A44' }
+                                        ].map(macro => {
+                                            const pct = Math.min(100, Math.round((macro.value / (macro.target || 1)) * 100));
+                                            return (
+                                                <div key={macro.label} className="space-y-2">
+                                                    <div className="flex items-baseline justify-between text-xs">
+                                                        <span className="font-medium text-[#1C2520]">{macro.label}</span>
+                                                        <span className="text-[#646D67]"><strong className="text-[#1C2520] font-semibold">{macro.value}g</strong> / {macro.target}g</span>
+                                                    </div>
+                                                    <div className="w-full h-2 rounded-full bg-[#F0EFEA] overflow-hidden">
+                                                        <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, backgroundColor: macro.color }} />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+
+                                    {/* Secondary Metrics */}
+                                    <div className="pt-4 border-t border-[#F0EFEA] grid grid-cols-3 gap-4 text-xs">
+                                        <div>
+                                            <span className="text-[#646D67] block">Saturated Fat</span>
+                                            <span className="font-semibold text-[#1C2520] mt-0.5 block">{todayTotals.saturatedFat}g <span className="font-normal text-[#646D67]">/ {targets.saturatedFat}g</span></span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[#646D67] block">Sodium</span>
+                                            <span className="font-semibold text-[#1C2520] mt-0.5 block">{todayTotals.sodium.toLocaleString()}mg <span className="font-normal text-[#646D67]">/ {targets.sodium.toLocaleString()}mg</span></span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[#646D67] block">Cholesterol</span>
+                                            <span className="font-semibold text-[#1C2520] mt-0.5 block">{todayTotals.cholesterol.toLocaleString()}mg</span>
+                                        </div>
+                                    </div>
+                                </section>
+
+                                {/* Key Contributing Factors */}
+                                {todayFactors.length > 0 && (
+                                    <section className="bg-white rounded-2xl border border-[#E6E4DC] p-6 shadow-sm space-y-4">
+                                        <div>
+                                            <h2 className="text-sm font-semibold text-[#1C2520]">Key Contributing Factors</h2>
+                                            <p className="text-xs text-[#646D67] mt-0.5">How today&apos;s ingredients and cooking methods shaped your totals</p>
+                                        </div>
+                                        <div className="divide-y divide-[#F0EFEA]">
+                                            {todayFactors.map((factor, idx) => (
+                                                <div key={idx} className="py-3 first:pt-1 last:pb-0 flex items-start gap-3">
+                                                    <span className="w-2 h-2 rounded-full bg-[#2D5A43] mt-1.5 shrink-0" />
+                                                    <div className="text-xs leading-relaxed">
+                                                        <span className="font-semibold text-[#1C2520]">{factor.label}: </span>
+                                                        <span className="text-[#646D67]">{factor.detail}</span>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </section>
+                                )}
+
+                                {/* Today's Meals */}
+                                <section className="space-y-3">
+                                    <div className="flex items-center justify-between px-1">
+                                        <h2 className="text-xs font-semibold uppercase tracking-wider text-[#646D67]">Today&apos;s Meals ({todayMeals.length})</h2>
+                                        <button onClick={() => setActiveTab('log')} className="inline-flex items-center gap-1 text-xs font-medium text-[#2D5A43] hover:text-[#234735]">
+                                            <Plus className="w-3.5 h-3.5" />
+                                            <span>Log Meal</span>
+                                        </button>
+                                    </div>
+
+                                    {todayMeals.length === 0 ? (
+                                        <div className="bg-white rounded-2xl border border-[#E6E4DC] p-8 text-center space-y-3">
+                                            <p className="text-sm text-[#646D67]">No meals logged yet today.</p>
+                                            <button onClick={() => setActiveTab('log')} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#2D5A43] hover:bg-[#234735] text-white text-xs font-medium transition">
+                                                <Plus className="w-4 h-4" />
+                                                <span>Log Your First Meal</span>
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-2.5">
+                                            {todayMeals.map(meal => {
+                                                const isExpanded = expandedMealId === meal.id;
+                                                return (
+                                                    <div key={meal.id} className="bg-white rounded-2xl border border-[#E6E4DC] overflow-hidden transition">
+                                                        <div onClick={() => setExpandedMealId(isExpanded ? null : meal.id)} className="p-4 sm:px-5 cursor-pointer hover:bg-[#FAF9F6] transition flex items-center justify-between gap-4">
+                                                            <div className="space-y-1 min-w-0">
+                                                                <div className="flex items-center gap-2 text-[11px] text-[#646D67]">
+                                                                    <span className="font-semibold text-[#2D5A43]">{meal.mealType}</span>
+                                                                    <span>•</span>
+                                                                    <span>{meal.cookingStyle}</span>
+                                                                </div>
+                                                                <h3 className="text-sm font-semibold text-[#1C2520] truncate">{meal.mealTitle}</h3>
+                                                                <div className="flex flex-wrap items-center gap-3 text-xs text-[#646D67]">
+                                                                    <span className="font-medium text-[#1C2520]">{meal.totals?.calories} kcal</span>
+                                                                    <span>Protein {meal.totals?.protein}g</span>
+                                                                    <span>Carbs {meal.totals?.carbs}g</span>
+                                                                    <span>Fat {meal.totals?.fat}g</span>
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-2 shrink-0">
+                                                                <button onClick={(e) => { e.stopPropagation(); handleDeleteMeal(meal.id); }} className="p-2 rounded-lg text-[#646D67] hover:text-[#B55A44] hover:bg-[#F6F5F0] transition" title="Remove meal">
+                                                                    <Trash2 className="w-4 h-4" />
+                                                                </button>
+                                                                <div className="text-[#646D67]">
+                                                                    {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+
+                                                        {isExpanded && (
+                                                            <div className="px-5 pb-4 pt-3 border-t border-[#F0EFEA] bg-[#FAF9F6] space-y-3">
+                                                                {meal.cookingImpactNote && (
+                                                                    <p className="text-xs text-[#646D67] leading-relaxed">{meal.cookingImpactNote}</p>
+                                                                )}
+                                                                <div className="overflow-x-auto">
+                                                                    <table className="w-full text-left border-collapse text-xs">
+                                                                        <thead>
+                                                                            <tr className="border-b border-[#E6E4DC] text-[#646D67]">
+                                                                                <th className="py-2 pr-3 font-medium">Ingredient</th>
+                                                                                <th className="py-2 px-2 font-medium text-right">Calories</th>
+                                                                                <th className="py-2 px-2 font-medium text-right">Protein</th>
+                                                                                <th className="py-2 px-2 font-medium text-right">Carbs</th>
+                                                                                <th className="py-2 pl-2 font-medium text-right">Fat</th>
+                                                                            </tr>
+                                                                        </thead>
+                                                                        <tbody className="divide-y divide-[#F0EFEA]">
+                                                                            {(meal.ingredients || []).map((item, idx) => (
+                                                                                <tr key={idx} className="text-[#1C2520]">
+                                                                                    <td className="py-2.5 pr-3">
+                                                                                        <div className="font-medium">{item.ingredient}</div>
+                                                                                        {item.note && <div className="text-[11px] text-[#646D67]">{item.note}</div>}
+                                                                                    </td>
+                                                                                    <td className="py-2.5 px-2 text-right font-medium whitespace-nowrap">{item.calories} kcal</td>
+                                                                                    <td className="py-2.5 px-2 text-right text-[#646D67] whitespace-nowrap">{item.protein}g</td>
+                                                                                    <td className="py-2.5 px-2 text-right text-[#646D67] whitespace-nowrap">{item.carbs}g</td>
+                                                                                    <td className="py-2.5 pl-2 text-right text-[#646D67] whitespace-nowrap">{item.fat}g</td>
+                                                                                </tr>
+                                                                            ))}
+                                                                        </tbody>
+                                                                    </table>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </section>
+                            </main>
+                        )}
+
+                        {/* ================= VIEW 2: LOG MEAL ================= */}
+                        {activeTab === 'log' && (
+                            <main className="space-y-6">
+                                <form onSubmit={handleAnalyze} className="bg-white rounded-2xl border border-[#E6E4DC] p-6 shadow-sm space-y-5">
+                                    <div className="space-y-2">
+                                        <label className="block text-xs font-medium text-[#646D67]">Meal</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {MEAL_TYPES.map(type => (
+                                                <button key={type} type="button" onClick={() => setMealType(type)} className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition border ${mealType === type ? 'bg-[#2D5A43] text-white border-[#2D5A43]' : 'bg-[#F6F5F0] text-[#1C2520] border-[#E6E4DC] hover:bg-[#EAE8E0]'}`}>
+                                                    {type}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <label className="block text-xs font-medium text-[#646D67]">Cooking Style</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {COOKING_STYLES.map(style => (
+                                                <button key={style} type="button" onClick={() => setCookingStyle(style)} className={`px-3.5 py-1.5 rounded-xl text-xs font-medium transition border ${cookingStyle === style ? 'bg-[#2D5A43] text-white border-[#2D5A43]' : 'bg-[#F6F5F0] text-[#1C2520] border-[#E6E4DC] hover:bg-[#EAE8E0]'}`}>
+                                                    {style}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-medium text-[#646D67]">Ingredients & Quantities</label>
+                                            <button type="button" onClick={handleFillSampleBreakfast} className="text-xs text-[#2D5A43] hover:underline font-medium">Load sample breakfast</button>
+                                        </div>
+                                        <textarea
+                                            rows={3}
+                                            value={ingredientsText}
+                                            onChange={(e) => setIngredientsText(e.target.value)}
+                                            placeholder="e.g., 6 extra-large eggs, 1/3 lb bacon, 5 slices American cheese, 3 tbsp butter, 2 slices white bread"
+                                            className="w-full p-3.5 rounded-xl bg-[#F6F5F0] border border-[#E6E4DC] focus:border-[#2D5A43] focus:bg-white focus:outline-none text-sm text-[#1C2520] placeholder:text-[#646D67]/60 leading-relaxed transition"
+                                        />
+                                    </div>
+
+                                    <button type="submit" disabled={isAnalyzing || !ingredientsText.trim()} className="w-full py-3 px-4 rounded-xl bg-[#2D5A43] hover:bg-[#234735] disabled:opacity-50 text-white text-xs font-semibold tracking-wide transition flex items-center justify-center gap-2">
+                                        {isAnalyzing ? (
+                                            <>
+                                                <Loader2 className="w-4 h-4 animate-spin" />
+                                                <span>Analyzing Ingredients & Cooking Style...</span>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <Sparkles className="w-4 h-4" />
+                                                <span>Analyze Meal</span>
+                                            </>
+                                        )}
+                                    </button>
+                                </form>
+
+                                {previewMeal && (
+                                    <section className="bg-white rounded-2xl border border-[#E6E4DC] p-6 shadow-sm space-y-5">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-[#F0EFEA]">
+                                            <div>
+                                                <div className="text-xs text-[#646D67]">{previewMeal.mealType} • {previewMeal.cookingStyle}</div>
+                                                <h2 className="text-base font-semibold text-[#1C2520] mt-0.5">{previewMeal.mealTitle}</h2>
+                                            </div>
+                                            <div className="flex items-baseline gap-4 text-xs">
+                                                <div>
+                                                    <span className="text-[#646D67] block">Calories</span>
+                                                    <span className="text-base font-semibold text-[#1C2520]">{previewMeal.totals.calories} kcal</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-[#646D67] block">Protein</span>
+                                                    <span className="text-sm font-semibold text-[#2D5A43]">{previewMeal.totals.protein}g</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-[#646D67] block">Carbs</span>
+                                                    <span className="text-sm font-semibold text-[#C47D3B]">{previewMeal.totals.carbs}g</span>
+                                                </div>
+                                                <div>
+                                                    <span className="text-[#646D67] block">Fat</span>
+                                                    <span className="text-sm font-semibold text-[#B55A44]">{previewMeal.totals.fat}g</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {previewMeal.cookingImpactNote && (
+                                            <p className="text-xs text-[#646D67] bg-[#F6F5F0] px-3.5 py-2.5 rounded-xl leading-relaxed">{previewMeal.cookingImpactNote}</p>
+                                        )}
+
+                                        <div className="overflow-x-auto">
+                                            <table className="w-full text-left border-collapse text-xs">
+                                                <thead>
+                                                    <tr className="border-b border-[#E6E4DC] text-[#646D67]">
+                                                        <th className="py-2 pr-3 font-medium">Ingredient</th>
+                                                        <th className="py-2 px-2 font-medium text-right">Calories</th>
+                                                        <th className="py-2 px-2 font-medium text-right">Protein</th>
+                                                        <th className="py-2 px-2 font-medium text-right">Carbs</th>
+                                                        <th className="py-2 pl-2 font-medium text-right">Fat</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-[#F0EFEA]">
+                                                    {previewMeal.ingredients.map((item, idx) => (
+                                                        <tr key={idx} className="text-[#1C2520]">
+                                                            <td className="py-2.5 pr-3">
+                                                                <div className="font-medium">{item.ingredient}</div>
+                                                                {item.note && <div className="text-[11px] text-[#646D67]">{item.note}</div>}
+                                                            </td>
+                                                            <td className="py-2.5 px-2 text-right font-medium whitespace-nowrap">{item.calories} kcal</td>
+                                                            <td className="py-2.5 px-2 text-right text-[#646D67] whitespace-nowrap">{item.protein}g</td>
+                                                            <td className="py-2.5 px-2 text-right text-[#646D67] whitespace-nowrap">{item.carbs}g</td>
+                                                            <td className="py-2.5 pl-2 text-right text-[#646D67] whitespace-nowrap">{item.fat}g</td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+
+                                        <div className="pt-2 flex justify-end">
+                                            <button type="button" onClick={handleSavePreviewToToday} className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#2D5A43] hover:bg-[#234735] text-white text-xs font-semibold transition flex items-center justify-center gap-1.5">
+                                                <Check className="w-4 h-4" />
+                                                <span>Save to Today</span>
+                                            </button>
+                                        </div>
+                                    </section>
+                                )}
+                            </main>
+                        )}
+
+                        {/* ================= VIEW 3: 14-DAY HISTORY ================= */}
+                        {activeTab === 'history' && (
+                            <main className="space-y-4">
+                                {historyDays.length === 0 ? (
+                                    <div className="bg-white rounded-2xl border border-[#E6E4DC] p-8 text-center">
+                                        <p className="text-sm text-[#646D67]">No meal history recorded yet.</p>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {historyDays.map(day => {
+                                            const isExpanded = expandedHistoryDate === day.dateKey;
+                                            return (
+                                                <div key={day.dateKey} className="bg-white rounded-2xl border border-[#E6E4DC] overflow-hidden transition">
+                                                    <div onClick={() => setExpandedHistoryDate(isExpanded ? null : day.dateKey)} className="p-5 cursor-pointer hover:bg-[#FAF9F6] transition flex items-center justify-between gap-4">
+                                                        <div className="space-y-1">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-sm font-semibold text-[#1C2520]">{day.readableDate}</span>
+                                                                <span className="text-xs text-[#646D67]">({day.meals.length} {day.meals.length === 1 ? 'meal' : 'meals'})</span>
+                                                            </div>
+                                                            <div className="text-xs text-[#646D67] truncate max-w-md">
+                                                                {day.meals.map(m => m.mealTitle).join(' • ')}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex items-center gap-4 shrink-0">
+                                                            <div className="text-right">
+                                                                <div className="text-sm font-semibold text-[#1C2520]">{day.totals.calories.toLocaleString()} kcal</div>
+                                                                <div className="text-[11px] text-[#646D67]">P {day.totals.protein}g • C {day.totals.carbs}g • F {day.totals.fat}g</div>
+                                                            </div>
+                                                            <div className="text-[#646D67]">
+                                                                {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    {isExpanded && (
+                                                        <div className="px-5 pb-5 pt-3 border-t border-[#F0EFEA] bg-[#FAF9F6] space-y-4">
+                                                            {day.factors.length > 0 && (
+                                                                <div className="space-y-1.5">
+                                                                    <div className="text-[11px] font-semibold uppercase tracking-wider text-[#646D67]">Key Contributing Factors</div>
+                                                                    <ul className="space-y-1 text-xs text-[#646D67]">
+                                                                        {day.factors.map((f, idx) => (
+                                                                            <li key={idx}><strong className="text-[#1C2520] font-medium">{f.label}:</strong> {f.detail}</li>
+                                                                        ))}
+                                                                    </ul>
+                                                                </div>
+                                                            )}
+                                                            <div className="space-y-2">
+                                                                <div className="text-[11px] font-semibold uppercase tracking-wider text-[#646D67]">Logged Meals</div>
+                                                                {day.meals.map(m => (
+                                                                    <div key={m.id} className="p-3 rounded-xl bg-white border border-[#E6E4DC] flex items-center justify-between text-xs">
+                                                                        <div>
+                                                                            <span className="font-semibold text-[#1C2520]">{m.mealTitle}</span>
+                                                                            <span className="text-[#646D67] ml-2">({m.cookingStyle})</span>
+                                                                        </div>
+                                                                        <div className="text-[#646D67] font-medium">{m.totals?.calories} kcal</div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                                <p className="text-center text-xs text-[#646D67] pt-2">Entries are automatically kept for 14 days.</p>
+                            </main>
+                        )}
+
+                        {/* ================= VIEW 4: GOALS ================= */}
+                        {activeTab === 'goals' && (
+                            <main className="space-y-4">
+                                <form onSubmit={handleSaveGoalsForm} className="bg-white rounded-2xl border border-[#E6E4DC] p-6 shadow-sm space-y-5">
+                                    <div>
+                                        <h2 className="text-sm font-semibold text-[#1C2520]">Daily Nutritional Targets</h2>
+                                        <p className="text-xs text-[#646D67] mt-0.5">Set your daily energy and macro thresholds for scoreboard tracking</p>
+                                    </div>
+
+                                    {goalSavedMessage && (
+                                        <div className="p-3 rounded-xl bg-[#EAF0EC] text-[#2D5A43] text-xs font-medium flex items-center gap-2">
+                                            <Check className="w-4 h-4" />
+                                            <span>Goals updated successfully!</span>
+                                        </div>
+                                    )}
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-[#646D67]">Calories (kcal)</label>
+                                            <input type="number" value={goalCalories} onChange={(e) => setGoalCalories(e.target.value)} className="w-full p-3 rounded-xl bg-[#F6F5F0] border border-[#E6E4DC] focus:border-[#2D5A43] focus:bg-white focus:outline-none text-xs text-[#1C2520]" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-[#646D67]">Protein (g)</label>
+                                            <input type="number" value={goalProtein} onChange={(e) => setGoalProtein(e.target.value)} className="w-full p-3 rounded-xl bg-[#F6F5F0] border border-[#E6E4DC] focus:border-[#2D5A43] focus:bg-white focus:outline-none text-xs text-[#1C2520]" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-[#646D67]">Carbohydrates (g)</label>
+                                            <input type="number" value={goalCarbs} onChange={(e) => setGoalCarbs(e.target.value)} className="w-full p-3 rounded-xl bg-[#F6F5F0] border border-[#E6E4DC] focus:border-[#2D5A43] focus:bg-white focus:outline-none text-xs text-[#1C2520]" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-[#646D67]">Total Fat (g)</label>
+                                            <input type="number" value={goalFat} onChange={(e) => setGoalFat(e.target.value)} className="w-full p-3 rounded-xl bg-[#F6F5F0] border border-[#E6E4DC] focus:border-[#2D5A43] focus:bg-white focus:outline-none text-xs text-[#1C2520]" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-[#646D67]">Saturated Fat (g)</label>
+                                            <input type="number" value={goalSatFat} onChange={(e) => setGoalSatFat(e.target.value)} className="w-full p-3 rounded-xl bg-[#F6F5F0] border border-[#E6E4DC] focus:border-[#2D5A43] focus:bg-white focus:outline-none text-xs text-[#1C2520]" />
+                                        </div>
+                                        <div className="space-y-1.5">
+                                            <label className="text-xs font-medium text-[#646D67]">Sodium (mg)</label>
+                                            <input type="number" value={goalSodium} onChange={(e) => setGoalSodium(e.target.value)} className="w-full p-3 rounded-xl bg-[#F6F5F0] border border-[#E6E4DC] focus:border-[#2D5A43] focus:bg-white focus:outline-none text-xs text-[#1C2520]" />
+                                        </div>
+                                    </div>
+
+                                    <div className="pt-2 flex justify-end">
+                                        <button type="submit" className="w-full sm:w-auto px-6 py-2.5 rounded-xl bg-[#2D5A43] hover:bg-[#234735] text-white text-xs font-semibold transition flex items-center justify-center gap-1.5">
+                                            <Check className="w-4 h-4" />
+                                            <span>Save Targets</span>
+                                        </button>
+                                    </div>
+                                </form>
+                            </main>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    </script>
+</body>
+</html>
